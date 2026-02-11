@@ -8,6 +8,7 @@ build/
 !go.mod
 !go.sum
 !/*.go
+!*.md
 
 
 # Binaries for programs and plugins
