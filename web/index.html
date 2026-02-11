@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>sysstat 走势</title>
+  <style>
+    :root {
+      --bg: #f8f3e8;
+      --ink: #1c1b1a;
+      --muted: #6f675f;
+      --accent: #b64a2b;
+      --card: #fff9ef;
+      --border: #e6dccf;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #f2e2cb 0%, transparent 60%),
+        radial-gradient(900px 500px at 100% 0%, #f6d6c0 0%, transparent 55%),
+        var(--bg);
+    }
+    header {
+      padding: 32px 20px 16px;
+      text-align: center;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      letter-spacing: 2px;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 12px 20px 48px;
+      display: grid;
+      gap: 20px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.06);
+      animation: rise 600ms ease both;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .meta {
+      display: grid;
+      gap: 6px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    select {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--ink);
+      padding: 6px 10px;
+      border-radius: 10px;
+    }
+    .section-title {
+      font-size: 18px;
+      margin: 0 0 10px;
+      color: var(--accent);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 8px 6px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.6px;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 10px;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      padding: 6px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    .status {
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    .chart-wrap {
+      position: relative;
+      height: 320px;
+    }
+    .about {
+      font-size: 14px;
+      color: var(--muted);
+      display: grid;
+      gap: 6px;
+    }
+    @media (max-width: 720px) {
+      h1 { font-size: 24px; }
+      main { padding: 8px 12px 32px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>sysstat 走势</h1>
+    <div class="sub">默认显示最近 4 小时，最长 3 天</div>
+    <div class="controls">
+      <label>
+        时间范围
+        <select id="range">
+          <option value="1h">最近 1 小时</option>
+          <option value="4h" selected>最近 4 小时</option>
+          <option value="12h">最近 12 小时</option>
+          <option value="1d">最近 1 天</option>
+          <option value="2d">最近 2 天</option>
+          <option value="3d">最近 3 天</option>
+        </select>
+      </label>
+      <button id="refresh">刷新并采样</button>
+    </div>
+    <div class="status" id="status">准备就绪</div>
+  </header>
+  <main id="content">
+    <div class="card">
+      <div class="empty">正在加载数据...</div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <script>
+    const content = document.getElementById('content');
+    const refreshBtn = document.getElementById('refresh');
+    const rangeSelect = document.getElementById('range');
+    const statusEl = document.getElementById('status');
+
+    const chartStore = {};
+
+    const chartDefs = [
+      { key: 'cpu', title: 'CPU 走势', id: 'cpuChart' },
+      { key: 'memory', title: '内存 走势', id: 'memChart' },
+      { key: 'disk', title: '磁盘 走势', id: 'diskChart' },
+      { key: 'net', title: '网络 走势', id: 'netChart' },
+      { key: 'swap', title: 'Swap 走势', id: 'swapChart' },
+      { key: 'load', title: '负载 走势', id: 'loadChart' },
+      { key: 'io', title: 'I/O 走势', id: 'ioChart' }
+    ];
+
+    refreshBtn.addEventListener('click', () => runSampleAndLoad());
+    rangeSelect.addEventListener('change', () => loadSeries());
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function renderMeta(meta) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const rangeHours = meta.range_hours ? `${meta.range_hours}h` : '-';
+      const stride = meta.stride ? `每 ${meta.stride} 条取 1 条` : '-';
+      card.innerHTML = `
+        <h2 class="section-title">元信息</h2>
+        <div class="meta">
+          <div>文件: ${(meta.files || []).join(', ') || '-'}</div>
+          <div>主机: ${meta.host || '-'}</div>
+          <div>生成时间: ${meta.generated_at || '-'}</div>
+          <div>时间范围: ${rangeHours}</div>
+          <div>数据稀疏: ${stride}</div>
+        </div>
+      `;
+      return card;
+    }
+
+    function renderAbout() {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <h2 class="section-title">关于 sar 监控数据</h2>
+        <div class="about">
+          <div>数据来源于 sysstat/sar 的采样文件，按时间序列展示。</div>
+          <div>默认展示 CPU 与内存走势，若存在其他指标会自动显示。</div>
+          <div>常见扩展指标: 磁盘、网络、Swap、I/O、系统负载。</div>
+        </div>
+      `;
+      return card;
+    }
+
+    function renderChartCard(title, canvasId) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <h2 class="section-title">${title}</h2>
+        <div class="chart-wrap">
+          <canvas id="${canvasId}"></canvas>
+        </div>
+      `;
+      return card;
+    }
+
+    function formatLabel(label) {
+      if (!label) return '-';
+      const parts = label.split(' ');
+      if (parts.length < 2) return label;
+      const date = parts[0].slice(5);
+      const time = parts[1].slice(0, 5);
+      return `${date} ${time}`;
+    }
+
+    function renderChart(canvasId, labels, seriesMap, existingChart) {
+      const ctx = document.getElementById(canvasId);
+      if (!ctx) return null;
+
+      if (existingChart) {
+        existingChart.destroy();
+      }
+
+      const colors = ['#b64a2b', '#2b6cb0', '#2f855a', '#744210', '#6b46c1'];
+      const datasets = Object.entries(seriesMap || {}).map(([key, values], idx) => ({
+        label: key,
+        data: (values || []).map(value => (value === null ? null : value)),
+        borderColor: colors[idx % colors.length],
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        tension: 0.25,
+        spanGaps: true,
+        pointRadius: 0
+      }));
+
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: (labels || []).map(formatLabel),
+          datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { ticks: { maxTicksLimit: 12 } },
+            y: { beginAtZero: false }
+          },
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    }
+
+    function renderCharts(data) {
+      chartDefs.forEach(def => {
+        const block = data[def.key];
+        if (!block || !block.labels || !block.series) {
+          return;
+        }
+
+        content.appendChild(renderChartCard(def.title, def.id));
+        chartStore[def.id] = renderChart(def.id, block.labels, block.series, chartStore[def.id]);
+      });
+    }
+
+    async function loadSeries() {
+      content.innerHTML = '<div class="card"><div class="empty">正在加载数据...</div></div>';
+      setStatus('正在获取数据...');
+      refreshBtn.disabled = true;
+      rangeSelect.disabled = true;
+      try {
+        const hours = rangeToHours(rangeSelect.value || '4h');
+        const res = await fetch(`/api/timeseries?hours=${hours}`);
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || '获取失败');
+        }
+
+        content.innerHTML = '';
+        content.appendChild(renderMeta(data.meta || {}));
+        content.appendChild(renderAbout());
+        renderCharts(data || {});
+        setStatus('数据已更新');
+      } catch (err) {
+        content.innerHTML = `
+          <div class="card">
+            <div class="empty">加载失败: ${err.message}</div>
+          </div>
+        `;
+        setStatus('加载失败');
+      } finally {
+        refreshBtn.disabled = false;
+        rangeSelect.disabled = false;
+      }
+    }
+
+    async function runSampleAndLoad() {
+      try {
+        setStatus('正在采样，约 1 分钟...');
+        refreshBtn.disabled = true;
+        rangeSelect.disabled = true;
+        const res = await fetch('/api/refresh', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || '采样失败');
+        }
+        await loadSeries();
+      } catch (err) {
+        setStatus(`采样失败: ${err.message}`);
+        refreshBtn.disabled = false;
+        rangeSelect.disabled = false;
+      }
+    }
+
+    function rangeToHours(value) {
+      if (!value) return 4;
+      const trimmed = value.trim().toLowerCase();
+      if (trimmed.endsWith('h')) {
+        return parseInt(trimmed.replace('h', ''), 10) || 4;
+      }
+      if (trimmed.endsWith('d')) {
+        const days = parseInt(trimmed.replace('d', ''), 10) || 1;
+        return days * 24;
+      }
+      const hours = parseInt(trimmed, 10);
+      return Number.isNaN(hours) ? 4 : hours;
+    }
+
+    runSampleAndLoad();
+  </script>
+</body>
+</html>

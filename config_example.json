@@ -1,0 +1,6 @@
+{
+  "sysstat_dir": "/var/log/sysstat",
+  "port": "8080",
+  "password": "123456",
+  "tz_offset_hours": 8
+}

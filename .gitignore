@@ -1,1 +1,67 @@
 config.json
+
+build/
+
+/*
+!/*/
+!config_example.json
+!go.mod
+!go.sum
+!/*.go
+
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories (uncomment if using dep)
+# vendor/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Config files (keep example, ignore actual config)
+config.json
+
+# Build directories
+build/
+
+# Temporary files
+*.tmp
+*.log
+*.pid
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Scripts output (if any)
+scripts/*.out
+    
+
+
+
